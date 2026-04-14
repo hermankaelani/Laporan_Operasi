@@ -607,19 +607,79 @@ textarea {
     <!-- iniscript login -->
  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
  <script>
-function login(){
-  const username = document.getElementById("username").value;
-  const password = document.getElementById("password").value;
+// ================= CONFIG =================
+window.APP = {
+  SUPABASE_URL: "https://bicgneywlttowehtkyro.supabase.co",
+  SUPABASE_KEY: "sb_publishable_fVW5CAXTYzLjFeWruAds2Q_dGXNZV5C"
+};
 
-  // 🔥 login simple (hardcode / bisa nanti ke tabel users)
-  if(username === "admin" && password === "123"){
-    sessionStorage.setItem("login","true");
+// ================= HASH PASSWORD =================
+async function hashPassword(password){
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
 
-    document.getElementById("loginWrapper").style.display = "none";
-    document.getElementById("mainSection").style.display = "block";
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
 
-  } else {
-    alert("Login gagal");
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// ================= LOGIN =================
+async function login(){
+
+  const usernameInput = document.getElementById("username");
+  const passwordInput = document.getElementById("password");
+
+  if(!usernameInput || !passwordInput){
+    alert("Form login tidak ditemukan");
+    return;
+  }
+
+  const username = usernameInput.value.trim();
+  const password = passwordInput.value;
+
+  if(!username || !password){
+    alert("Username dan password wajib diisi");
+    return;
+  }
+
+  try {
+
+    const hashed = await hashPassword(password);
+
+    const url = `${window.APP.SUPABASE_URL}/rest/v1/users?select=*&username=eq.${encodeURIComponent(username)}&password=eq.${hashed}`;
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        apikey: window.APP.SUPABASE_KEY,
+        Authorization: "Bearer " + window.APP.SUPABASE_KEY
+      }
+    });
+
+    if(!res.ok){
+      throw new Error("Gagal koneksi");
+    }
+
+    const data = await res.json();
+
+    if(Array.isArray(data) && data.length > 0){
+
+      sessionStorage.setItem("login","true");
+
+      document.getElementById("loginWrapper").style.display = "none";
+      document.getElementById("mainSection").style.display = "block";
+
+      if(typeof startAutoLogout === "function"){
+        startAutoLogout();
+      }
+
+    } else {
+      alert("Username atau password salah");
+    }
+
+  } catch(err){
+    alert("Terjadi kesalahan saat login");
   }
 }
 </script>
@@ -836,121 +896,7 @@ function login(){
         </script>
 
 
-         <!-- <script>
-          function renderLaporan(data, nama_rs, tgl_awal, tgl_akhir){
-
-  const hasil = document.getElementById("hasilLaporan");
-
-  function formatTanggal(tgl) {
-    const d = new Date(tgl);
-    return d.toLocaleDateString("id-ID");
-  }
-
-
-  let totalOperasi = data.length;
-
-let umum = 0;
-let asuransi = 0;
-let bpjsTK = 0;
-let bpjsKes = 0;
-
-let totalJasa = 0;
-
-data.forEach(row => {
-  const jasa = Number(row.jasa_operasi) || 0;
-  totalJasa += jasa;
-
-  switch(row.jaminan){
-    case "Umum":
-      umum++; break;
-    case "Asuransi":
-      asuransi++; break;
-    case "BPJS TK":
-      bpjsTK++; break;
-    case "BPJS Kesehatan":
-      bpjsKes++; break;
-  }
-});
-
-  let tabel = `
-  <table border="1" width="100%" cellpadding="5">
-  <tr>
-    <th>Aksi</th>
-    <th>Tanggal</th>
-    <th>Pasien</th>
-    <th>Diagnosa</th>
-    <th>Tindakan</th>
-    <th>Jaminan</th>
-    <th>Jasa</th>
-    <th>Foto</th>
-  </tr>
-  `;
-
-  if(data.length === 0){
-    tabel += `<tr><td colspan="8">Tidak ada data</td></tr>`;
-  }
-
-  data.forEach(row => {
-
-    const jasa = Number(row.jasa_operasi) || 0;
-    totalJasa += jasa;
-
-    // 🔥 FOTO SUPABASE
-    let fotoHTML = "-";
-    if(row.foto_urls){
-      const fotos = row.foto_urls.split(",");
-
-      fotoHTML = fotos.map(url => `
-        <img src="${url}"
-          style="width:60px;height:60px;object-fit:cover;margin:2px;border-radius:6px;cursor:pointer;"
-          onclick="bukaFoto('${url}')">
-      `).join("");
-    }
-
-    tabel += `
-    <tr>
-      <td>
-        <button onclick="editData('${row.id}')">Edit</button>
-        <button onclick="hapusData('${row.id}')">Hapus</button>
-      </td>
-      <td>${formatTanggal(row.tanggal_operasi)}</td>
-      <td>${row.nama_pasien}</td>
-      <td>${row.diagnosa}</td>
-      <td>${row.tindakan}</td>
-      <td>${row.jaminan}</td>
-      <td>Rp ${jasa.toLocaleString("id-ID")}</td>
-      <td>${fotoHTML}</td>
-    </tr>
-    `;
-  });
-
-  tabel += `
-    <tr>
-      <td colspan="6" align="right"><b>TOTAL</b></td>
-      <td><b>Rp ${totalJasa.toLocaleString("id-ID")}</b></td>
-      <td></td>
-    </tr>
-  </table>
-  `;
-
-  hasil.innerHTML = `
-  <h3>${nama_rs}</h3>
-  Periode: ${formatTanggal(tgl_awal)} - ${formatTanggal(tgl_akhir)}<br><br>
-
-  <b>Total Operasi:</b> ${totalOperasi}<br><br>
-
-  <b>Rincian Jaminan:</b><br>
-  Umum : ${umum}<br>
-  Asuransi : ${asuransi}<br>
-  BPJS TK : ${bpjsTK}<br>
-  BPJS Kesehatan : ${bpjsKes}<br><br>
-
-  <b>Total Jasa Operasi:</b> Rp ${totalJasa.toLocaleString("id-ID")}<br><br>
-
-  ${tabel}
-`;
-}
-         </script> -->
+       
    <script>
     function nextPageLaporan(){
   currentPageLaporan++;
@@ -1160,124 +1106,144 @@ function prevPageLaporan(){
 
       <!-- ini download report -->
     <script>
-      function downloadExcel() {
+function downloadExcel() {
 
-      if (!window.laporanCache) {
-        alert("Data belum tersedia.");
-        return;
-      }
+  if (!window.laporanCache || window.laporanCache.length === 0) {
+    alert("Data kosong");
+    return;
+  }
 
-      const nama_rs = document.getElementById("lap_nama_rs").value;
-      const tgl_awal = document.getElementById("lap_tgl_awal").value;
-      const tgl_akhir = document.getElementById("lap_tgl_akhir").value;
+  const nama_rs = document.getElementById("lap_nama_rs").value || "SEMUA RS";
+  const tgl_awal = document.getElementById("lap_tgl_awal").value;
+  const tgl_akhir = document.getElementById("lap_tgl_akhir").value;
 
-      function formatTanggal(tgl) {
-        const d = new Date(tgl);
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth()+1).padStart(2, '0');
-        const year = d.getFullYear();
-        return `${day}/${month}/${year}`;
-      }
+  function formatTanggal(tgl) {
+    const d = new Date(tgl);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth()+1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
 
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet([]);
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([]);
 
-      let data = [];
+  let sheetData = [];
 
-      data.push(["LAPORAN OPERASI"]);
-      data.push([nama_rs]);
-      data.push([`Periode : ${formatTanggal(tgl_awal)} s/d ${formatTanggal(tgl_akhir)}`]);
-      data.push([]);
+  // ================= HEADER =================
+  sheetData.push(["LAPORAN OPERASI"]);
+  sheetData.push([nama_rs]);
+  sheetData.push([`Periode : ${formatTanggal(tgl_awal)} s/d ${formatTanggal(tgl_akhir)}`]);
+  sheetData.push([]);
 
-      data.push(["Total Operasi :", window.laporanCache.total_operasi || 0]);
-      data.push(["Umum :", window.laporanCache.umum || 0]);
-      data.push(["Asuransi :", window.laporanCache.asuransi || 0]);
-      data.push(["BPJS TK :", window.laporanCache.bpjs || 0]);
-      data.push(["BPJS Kesehatan :", window.laporanCache.bpjskesehatan || 0]);
-      data.push([]);
+  // ================= HITUNG SUMMARY =================
+  let umum = 0, asuransi = 0, bpjsTK = 0, bpjsKes = 0;
+  let totalJasa = 0;
 
-      data.push(["Tanggal","Pasien","Diagnosa","Tindakan","Jaminan","Jasa"]);
+  window.laporanCache.forEach(row => {
+    const jasa = Number(row.jasa_operasi) || 0;
+    totalJasa += jasa;
 
-      let startDataRow = data.length + 1;
-
-      let tempData = [];
-
-      if (window.laporanCache.detail && window.laporanCache.detail.length > 0) {
-        window.laporanCache.detail.forEach(row => {
-          tempData.push({
-            tanggalObj: new Date(row.tanggal),
-            pasien: row.pasien,
-            diagnosa: row.diagnosa,
-            tindakan: row.tindakan,
-            jaminan: row.jaminan,
-            jasa: Number(row.jasa) || 0
-          });
-        });
-      }
-
-      // SORT TANGGAL
-      tempData.sort((a,b) => a.tanggalObj - b.tanggalObj);
-
-      tempData.forEach(item => {
-        data.push([
-          item.tanggalObj,
-          item.pasien,
-          item.diagnosa,
-          item.tindakan,
-          item.jaminan,
-          item.jasa
-        ]);
-      });
-
-      let lastRow = data.length;
-
-      // TOTAL JASA (pakai rumus)
-      data.push(["","","","","TOTAL JASA :", {f:`SUM(F${startDataRow}:F${lastRow})`}]);
-
-      let totalRowIndex = data.length - 1;
-
-      XLSX.utils.sheet_add_aoa(ws, data, {origin:"A1"});
-
-      // Lebar kolom
-      ws["!cols"] = [
-        { wch: 12 },
-        { wch: 20 },
-        { wch: 40 },
-        { wch: 40 },
-        { wch: 12 },
-        { wch: 18 }
-      ];
-
-      // FORMAT TANGGAL & UANG
-      for(let R = startDataRow-1; R <= lastRow-1; ++R){
-
-        let dateCell = XLSX.utils.encode_cell({r:R, c:0});
-        if(ws[dateCell]){
-          ws[dateCell].z = "dd/mm/yyyy";
-        }
-
-        let moneyCell = XLSX.utils.encode_cell({r:R, c:5});
-        if(ws[moneyCell]){
-          ws[moneyCell].t = 'n';
-          ws[moneyCell].z = '"Rp"#,##0';
-        }
-      }
-
-      // FORMAT TOTAL JASA JADI Rp
-      let totalCell = XLSX.utils.encode_cell({r: totalRowIndex, c:5});
-      if(ws[totalCell]){
-        ws[totalCell].t = 'n';
-        ws[totalCell].z = '"Rp"#,##0';
-      }
-
-      XLSX.utils.book_append_sheet(wb, ws, "Laporan");
-
-      const safeRS = nama_rs.replace(/\s+/g, "_");
-      const fileName = `Laporan_${safeRS}_${tgl_awal}_sd_${tgl_akhir}.xlsx`;
-
-      XLSX.writeFile(wb, fileName);
+    switch(row.jaminan){
+      case "Umum": umum++; break;
+      case "Asuransi": asuransi++; break;
+      case "BPJS TK": bpjsTK++; break;
+      case "BPJS Kesehatan": bpjsKes++; break;
     }
-    </script>
+  });
+
+  sheetData.push(["Total Operasi :", window.laporanCache.length]);
+  sheetData.push(["Umum :", umum]);
+  sheetData.push(["Asuransi :", asuransi]);
+  sheetData.push(["BPJS TK :", bpjsTK]);
+  sheetData.push(["BPJS Kesehatan :", bpjsKes]);
+  sheetData.push([]);
+
+  // ================= HEADER TABLE =================
+  sheetData.push([
+    "Tanggal",
+    "RS",
+    "Pasien",
+    "Diagnosa",
+    "Tindakan",
+    "Jaminan",
+    "Jasa"
+  ]);
+
+  let startRow = sheetData.length + 1;
+
+  // ================= DATA =================
+  let dataSorted = [...window.laporanCache];
+
+  dataSorted.sort((a,b) =>
+    new Date(a.tanggal_operasi) - new Date(b.tanggal_operasi)
+  );
+
+  dataSorted.forEach(row => {
+    sheetData.push([
+      new Date(row.tanggal_operasi),
+      row.nama_rs,
+      row.nama_pasien,
+      row.diagnosa,
+      row.tindakan,
+      row.jaminan,
+      Number(row.jasa_operasi) || 0
+    ]);
+  });
+
+  let lastRow = sheetData.length;
+
+  // ================= TOTAL =================
+  sheetData.push([
+    "", "", "", "", "", "TOTAL",
+    { f: `SUM(G${startRow}:G${lastRow})` }
+  ]);
+
+  let totalRowIndex = sheetData.length - 1;
+
+  XLSX.utils.sheet_add_aoa(ws, sheetData, { origin: "A1" });
+
+  // ================= FORMAT =================
+  ws["!cols"] = [
+    { wch: 12 }, // tanggal
+    { wch: 25 }, // rs
+    { wch: 25 }, // pasien
+    { wch: 40 }, // diagnosa
+    { wch: 40 }, // tindakan
+    { wch: 15 }, // jaminan
+    { wch: 18 }  // jasa
+  ];
+
+  // format tanggal & uang
+  for(let R = startRow-1; R <= lastRow-1; R++){
+
+    let dateCell = XLSX.utils.encode_cell({r:R, c:0});
+    if(ws[dateCell]){
+      ws[dateCell].z = "dd/mm/yyyy";
+    }
+
+    let moneyCell = XLSX.utils.encode_cell({r:R, c:6});
+    if(ws[moneyCell]){
+      ws[moneyCell].t = 'n';
+      ws[moneyCell].z = '"Rp"#,##0';
+    }
+  }
+
+  // format total
+  let totalCell = XLSX.utils.encode_cell({r: totalRowIndex, c:6});
+  if(ws[totalCell]){
+    ws[totalCell].t = 'n';
+    ws[totalCell].z = '"Rp"#,##0';
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, "Laporan");
+
+  const safeRS = nama_rs.replace(/\s+/g, "_");
+  const fileName = `Laporan_${safeRS}_${tgl_awal}_sd_${tgl_akhir}.xlsx`;
+
+  XLSX.writeFile(wb, fileName);
+}
+</script>
 
     <script>
       // angka Rp penerimaan
@@ -1311,70 +1277,89 @@ function prevPageLaporan(){
         });
       }
       </script>
-  
-     <script>
+      <script>
         document.getElementById("penerimaanForm")
-        .addEventListener("submit", function(e){
+.addEventListener("submit", async function(e){
 
-          e.preventDefault();
+  e.preventDefault();
 
-          if(sessionStorage.getItem("login") !== "true"){
-            alert("Silakan login terlebih dahulu.");
-            return;
-          }
+  if(sessionStorage.getItem("login") !== "true"){
+    alert("Silakan login terlebih dahulu.");
+    return;
+  }
 
-          const spinner = document.getElementById("spinnerPenerimaan");
-          const success = document.getElementById("successPenerimaan");
+  const spinner = document.getElementById("spinnerPenerimaan");
+  const success = document.getElementById("successPenerimaan");
 
-          spinner.style.display = "block";
-          success.style.display = "none";
+  spinner.style.display = "block";
+  success.style.display = "none";
 
-          const formData = new FormData(this);
-          formData.append("token", "RAHASIA123");
+  const form = this;
 
-          // 🔥 INI BAGIAN PENTING (EDIT / INSERT)
-          const editId = this.dataset.editId;
+  try {
 
-          if(editId){
-            formData.append("action", "update_penerimaan");
-            formData.append("id", editId);
-          }else{
-            formData.append("action", "insert_penerimaan");
-          }
+    const total = document.getElementById("total_hidden").value;
 
-          fetch(SCRIPT_URL,{
-            method:"POST",
-            body:formData
-          })
-          .then(res=>res.json())
-          .then(res=>{
+    if(!total){
+      alert("Total belum diisi!");
+      return;
+    }
 
-            if(res.result === "success"){
+    const editId = form.dataset.editId;
 
-              this.reset();
-              delete this.dataset.editId; // ⬅ reset mode edit
+    let method = "POST";
+    let url = SUPABASE_URL + "/rest/v1/penerimaan_rs";
 
-              document.getElementById("total_penerimaan").value = "";
-              document.getElementById("tahun_input").value = new Date().getFullYear();
+    if(editId){
+      method = "PATCH";
+      url += "?id=eq." + editId;
+    }
 
-              success.style.display = "block";
+    const res = await fetch(url, {
+      method: method,
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: "Bearer " + SUPABASE_KEY,
+        "Content-Type": "application/json",
+        Prefer: "return=representation"
+      },
+      body: JSON.stringify({
+        nama_rs: form.nama_rs.value,
+        bulan: Number(form.bulan.value),
+        tahun: Number(form.tahun.value),
+        total: Number(total),
+        keterangan: form.keterangan.value
+      })
+    });
 
-              // 🔄 reload data biar update kelihatan
-              loadPenerimaan();
+    if(!res.ok){
+      const err = await res.text();
+      console.error(err);
+      throw new Error("Gagal simpan");
+    }
 
-            }
+    // SUCCESS
+    form.reset();
+    delete form.dataset.editId;
 
-          })
-          .catch(err=>{
-            alert("Error koneksi");
-            console.error(err);
-          })
-          .finally(()=>{
-            spinner.style.display = "none";
-          });
+    document.getElementById("total_penerimaan").value = "";
+    document.getElementById("total_hidden").value = "";
+    document.getElementById("tahun_input").value = new Date().getFullYear();
 
-        });
-        </script>
+    success.style.display = "block";
+
+    loadPenerimaan(); // reload data
+
+  } catch(err){
+    alert("Gagal simpan ke Supabase");
+    console.error(err);
+  } finally {
+    spinner.style.display = "none";
+  }
+
+});
+      </script>
+
  <script>
 let currentPage = 1;
 const perPage = 12;
@@ -1382,36 +1367,42 @@ const perPage = 12;
 // ======================
 // LOAD DATA PENERIMAAN
 // ======================
-function loadPenerimaan() {
+async function loadPenerimaan(){
+
   const spinner = document.getElementById("spinnerLoadPenerimaan");
   const list = document.getElementById("listPenerimaan");
 
   spinner.style.display = "block";
   list.innerHTML = "";
 
-  fetch(SCRIPT_URL + "?action=get_penerimaan")
-    .then(res => res.json())
-    .then(res => {
-      if (res.result !== "success") {
-        list.innerHTML = "Gagal load data";
-        return;
+  try {
+
+    const res = await fetch(
+      SUPABASE_URL + "/rest/v1/penerimaan_rs?select=*",
+      {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: "Bearer " + SUPABASE_KEY,
+        }
       }
+    );
 
-      window.penerimaanCache = res.data || [];
+    const data = await res.json();
 
-      isiFilterTahun(res.data);
-      isiFilterRS(res.data);
+    window.penerimaanCache = data || [];
 
-      currentPage = 1;
-      renderTable();
-    })
-    .catch(err => {
-      list.innerHTML = "Error koneksi";
-      console.error(err);
-    })
-    .finally(() => {
-      spinner.style.display = "none";
-    });
+    isiFilterTahun(data);
+    isiFilterRS(data);
+
+    currentPage = 1;
+    renderTable();
+
+  } catch(err){
+    list.innerHTML = "Gagal load data";
+    console.error(err);
+  } finally {
+    spinner.style.display = "none";
+  }
 }
 
 // ======================
@@ -1629,28 +1620,36 @@ function prevPage() {
       }
     </script>
     <script>
-      function hapusPenerimaan(id){
+      async function hapusPenerimaan(id){
 
-      if(!confirm("Yakin hapus data ini?")) return;
+  if(!confirm("Yakin hapus data ini?")) return;
 
-      const formData = new FormData();
-      formData.append("token", "RAHASIA123");
-      formData.append("action", "delete_penerimaan");
-      formData.append("id", id);
+  try {
 
-      fetch(SCRIPT_URL, {
-        method: "POST",
-        body: formData
-      })
-      .then(res => res.json())
-      .then(res => {
-        if(res.result === "success"){
-          alert("Berhasil dihapus");
-          loadPenerimaan();
+    const res = await fetch(
+      SUPABASE_URL + "/rest/v1/penerimaan_rs?id=eq." + id,
+      {
+        method: "DELETE",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: "Bearer " + SUPABASE_KEY,
         }
-      });
+      }
+    );
 
+    if(!res.ok){
+      throw new Error("Gagal hapus");
     }
+
+    alert("Berhasil dihapus");
+    loadPenerimaan();
+
+  } catch(err){
+    alert("Gagal hapus data");
+    console.error(err);
+  }
+
+}
     </script>
     <script>
       function exportExcelPenerimaan() {
@@ -1759,29 +1758,32 @@ function prevPage() {
     </script>
 <!-- script tabungan -->
 <script>
-  // ==============================
-  // FORMAT RUPIAH DAN HIDDEN VALUE
-  // ==============================
-  const tabunganInput = document.getElementById("total_tabungan");
-  const tabunganHidden = document.getElementById("total_tabungan_hidden");
+// ==============================
+// FORMAT RUPIAH + HIDDEN VALUE
+// ==============================
+const tabunganInput = document.getElementById("total_tabungan");
+const tabunganHidden = document.getElementById("total_tabungan_hidden");
 
-  tabunganInput.addEventListener("input", function () {
-    let value = this.value.replace(/\D/g, ""); // hapus semua selain angka
-    tabunganHidden.value = value;             // nilai murni untuk dikirim ke server
+tabunganInput.addEventListener("input", function () {
+  let value = this.value.replace(/\D/g, "");
 
-    if (value === "") {
-      this.value = "";
-      return;
-    }
+  tabunganHidden.value = value;
 
-    // Format ribuan
-    this.value = new Intl.NumberFormat("id-ID").format(value);
-  });
+  if (!value) {
+    this.value = "";
+    return;
+  }
 
-  // ==============================
-  // SUBMIT FORM TABUNGAN
-  // ==============================
- document.getElementById("tabunganForm").addEventListener("submit", function(e){
+  this.value = new Intl.NumberFormat("id-ID").format(value);
+});
+
+
+// ==============================
+// SUBMIT (INSERT & UPDATE)
+// ==============================
+document.getElementById("tabunganForm")
+.addEventListener("submit", async function(e){
+
   e.preventDefault();
 
   if(sessionStorage.getItem("login") !== "true"){
@@ -1795,90 +1797,127 @@ function prevPage() {
   spinner.style.display = "block";
   success.style.display = "none";
 
-  const formData = new FormData(this);
-  formData.append("token", "RAHASIA123");
+  const form = this;
 
-  const editId = this.dataset.editId;
+  try {
 
-  if(editId){
-    formData.append("action", "update_tabungan");
-    formData.append("id", editId);
-  } else {
-    formData.append("action", "insert_tabungan");
+    const total = tabunganHidden.value;
+    if(!total){
+      alert("Total belum diisi!");
+      return;
+    }
+
+    const editId = form.dataset.editId;
+
+    let method = "POST";
+    let url = SUPABASE_URL + "/rest/v1/tabungan";
+
+    if(editId){
+      method = "PATCH";
+      url += "?id=eq." + editId;
+    }
+
+    const res = await fetch(url, {
+      method: method,
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: "Bearer " + SUPABASE_KEY,
+        "Content-Type": "application/json",
+        Prefer: "return=representation"
+      },
+      body: JSON.stringify({
+        bulan: Number(form.bulan.value),
+        tahun: Number(form.tahun.value),
+        total: Number(total),
+        keterangan: form.keterangan.value
+      })
+    });
+
+    if(!res.ok){
+      const err = await res.text();
+      console.error(err);
+      throw new Error("Gagal simpan");
+    }
+
+    form.reset();
+    delete form.dataset.editId;
+
+    tabunganInput.value = "";
+    tabunganHidden.value = "";
+
+    success.style.display = "block";
+
+    loadTabungan();
+
+  } catch(err){
+    console.error(err);
+    alert("Gagal simpan ke Supabase");
+  } finally {
+    spinner.style.display = "none";
   }
 
-  formData.set("total", document.getElementById("total_tabungan_hidden").value);
-
-  fetch(SCRIPT_URL, {
-    method: "POST",
-    body: formData
-  })
-  .then(res => res.json())
-  .then(res => {
-    if(res.result === "success"){
-
-      this.reset();
-      delete this.dataset.editId;
-
-      document.getElementById("total_tabungan").value = "";
-      document.getElementById("total_tabungan_hidden").value = "";
-
-      success.style.display = "block";
-
-      loadTabungan();
-    }
-  })
-  .catch(err => {
-    alert("Terjadi kesalahan koneksi.");
-    console.error(err);
-  })
-  .finally(() => {
-    spinner.style.display = "none";
-  });
 });
-</script>
-    <script>
+
+
+// ==============================
+// GLOBAL STATE
+// ==============================
 let currentPageTabungan = 1;
 const perPageTabungan = 12;
 
-// ======================
-function loadTabungan() {
+
+// ==============================
+// LOAD DATA (SUPABASE)
+// ==============================
+async function loadTabungan(){
+
   const spinner = document.getElementById("spinnerLoadTabungan");
   const list = document.getElementById("listTabungan");
 
   spinner.style.display = "block";
   list.innerHTML = "";
 
-  fetch(SCRIPT_URL + "?action=get_tabungan")
-    .then(res => res.json())
-    .then(res => {
+  try {
 
-      if (res.result !== "success") {
-        list.innerHTML = "Gagal load data tabungan";
-        return;
+    const res = await fetch(
+      SUPABASE_URL + "/rest/v1/tabungan?select=*",
+      {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: "Bearer " + SUPABASE_KEY
+        }
       }
+    );
 
-      window.tabunganCache = res.data || [];
+    const data = await res.json();
 
-      isiFilterTahunTabungan(res.data);
+    window.tabunganCache = data || [];
 
-      currentPageTabungan = 1;
-      renderTableTabungan();
-    })
-    .catch(err => {
-      list.innerHTML = "Error koneksi";
-      console.error(err);
-    })
-    .finally(() => {
-      spinner.style.display = "none";
-    });
+    isiFilterTahunTabungan(data);
+
+    currentPageTabungan = 1;
+    renderTableTabungan();
+
+  } catch(err){
+    list.innerHTML = "Gagal load data";
+    console.error(err);
+  } finally {
+    spinner.style.display = "none";
+  }
 }
 
-// ======================
-function isiFilterTahunTabungan(data) {
-  const select = document.getElementById("filterTahunTabungan");
 
-  let tahunUnik = [...new Set(data.map(d => d.tahun))].sort((a,b)=>b-a);
+// ==============================
+// FILTER TAHUN
+// ==============================
+function isiFilterTahunTabungan(data) {
+
+  const select = document.getElementById("filterTahunTabungan");
+  if (!select) return;
+
+  let tahunUnik = [...new Set(data.map(d => d.tahun))]
+    .filter(Boolean)
+    .sort((a,b) => b - a);
 
   select.innerHTML = `<option value="">Semua Tahun</option>`;
 
@@ -1887,29 +1926,43 @@ function isiFilterTahunTabungan(data) {
   });
 }
 
-// ======================
-function renderTableTabungan() {
+
+// ==============================
+// RENDER TABLE
+// ==============================
+function renderTableTabungan(){
+
   const list = document.getElementById("listTabungan");
   let data = [...(window.tabunganCache || [])];
 
   const keyword = document.getElementById("searchTabungan").value.toLowerCase();
   const tahun = document.getElementById("filterTahunTabungan").value;
   const bulanFilter = document.getElementById("filterBulanTabungan").value;
+  const sort = document.getElementById("sortTabungan").value;
 
   const namaBulan = ["","Januari","Februari","Maret","April","Mei","Juni",
   "Juli","Agustus","September","Oktober","November","Desember"];
 
+  // SEARCH
   if(keyword){
     data = data.filter(d =>
-      (namaBulan[Number(d.bulan)] || "").toLowerCase().includes(keyword)
+      (namaBulan[Number(d.bulan)] || "").toLowerCase().includes(keyword) ||
+      String(d.tahun).includes(keyword)
     );
   }
 
-  if(tahun) data = data.filter(d => String(d.tahun) === String(tahun));
-  if(bulanFilter) data = data.filter(d => String(d.bulan) === String(bulanFilter));
+  // FILTER
+  if(tahun) data = data.filter(d => String(d.tahun) === tahun);
+  if(bulanFilter) data = data.filter(d => String(d.bulan) === bulanFilter);
 
-  data.sort((a,b)=> (b.tahun - a.tahun) || (b.bulan - a.bulan));
+  // SORT
+  data.sort((a,b)=> {
+    return sort === "desc"
+      ? (b.tahun - a.tahun || b.bulan - a.bulan)
+      : (a.tahun - b.tahun || a.bulan - b.bulan);
+  });
 
+  // PAGINATION
   const totalPage = Math.ceil(data.length / perPageTabungan) || 1;
   if(currentPageTabungan > totalPage) currentPageTabungan = totalPage;
 
@@ -1922,6 +1975,10 @@ function renderTableTabungan() {
     <div style="margin-bottom:10px;font-weight:bold;">
       Total Tabungan: Rp ${totalSemua.toLocaleString("id-ID")}
     </div>
+     <button onclick="exportExcelTabungan()" 
+    style="margin-bottom:10px;padding:6px 12px;cursor:pointer;">
+    📥 Export Excel
+  </button>
 
     <table border="1" width="100%" cellpadding="5">
       <tr>
@@ -1963,13 +2020,82 @@ function renderTableTabungan() {
   list.innerHTML = html;
 }
 
-// ======================
-// LISTENER FILTER TABUNGAN (INI YANG KURANG ❗)
-// ======================
+
+// ==============================
+// EDIT
+// ==============================
+function editTabungan(id){
+
+  const data = window.tabunganCache.find(d => String(d.id) === String(id));
+  if(!data) return;
+
+  const form = document.getElementById("tabunganForm");
+
+  form.bulan.value = data.bulan;
+  form.tahun.value = data.tahun;
+  form.keterangan.value = data.keterangan || "";
+
+  tabunganInput.value = Number(data.total).toLocaleString("id-ID");
+  tabunganHidden.value = data.total;
+
+  form.dataset.editId = id;
+}
+
+
+// ==============================
+// HAPUS
+// ==============================
+async function hapusTabungan(id){
+
+  if(!confirm("Yakin hapus data ini?")) return;
+
+  try {
+
+    const res = await fetch(
+      SUPABASE_URL + "/rest/v1/tabungan?id=eq." + id,
+      {
+        method: "DELETE",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: "Bearer " + SUPABASE_KEY
+        }
+      }
+    );
+
+    if(!res.ok) throw new Error();
+
+    alert("Berhasil dihapus");
+    loadTabungan();
+
+  } catch(err){
+    alert("Gagal hapus");
+    console.error(err);
+  }
+}
+
+
+// ==============================
+// PAGINATION
+// ==============================
+function nextPageTabungan(){
+  currentPageTabungan++;
+  renderTableTabungan();
+}
+
+function prevPageTabungan(){
+  currentPageTabungan--;
+  renderTableTabungan();
+}
+
+
+// ==============================
+// FILTER LISTENER
+// ==============================
 const filterTabunganElements = [
   "searchTabungan",
   "filterTahunTabungan",
-  "filterBulanTabungan"
+  "filterBulanTabungan",
+  "sortTabungan"
 ];
 
 filterTabunganElements.forEach(id => {
@@ -1984,81 +2110,132 @@ filterTabunganElements.forEach(id => {
   });
 });
 
-// ======================
-function nextPageTabungan(){
-  currentPageTabungan++;
-  renderTableTabungan();
+
+// ==============================
+// SET TAHUN OTOMATIS
+// ==============================
+document.getElementById("tahun_tabungan").value =
+  new Date().getFullYear();
+
+</script>
+
+<script>
+function isiFilterTahunTabungan(data) {
+
+  const select = document.getElementById("filterTahunTabungan");
+  if (!select) return;
+
+  let tahunUnik = [...new Set(data.map(d => d.tahun))]
+    .filter(Boolean)
+    .sort((a,b) => b - a);
+
+  select.innerHTML = `<option value="">Semua Tahun</option>`;
+
+  tahunUnik.forEach(t => {
+    select.innerHTML += `<option value="${t}">${t}</option>`;
+  });
+
 }
+</script>
 
-function prevPageTabungan(){
-  currentPageTabungan--;
-  renderTableTabungan();
-}
+<script>
+function exportExcelTabungan() {
 
-// ======================
-document.getElementById("total_tabungan").addEventListener("input", function () {
-  let value = this.value.replace(/\D/g, "");
-
-  if (value === "") {
-    this.value = "";
+  if (!window.tabunganCache || window.tabunganCache.length === 0) {
+    alert("Data kosong");
     return;
   }
 
-  this.value = new Intl.NumberFormat("id-ID").format(value);
-});
-</script>
+  let data = [...window.tabunganCache];
 
-<!-- script edit tabungan -->
-<script>
-  function editTabungan(id){
+  const keyword = document.getElementById("searchTabungan").value.toLowerCase();
+  const tahun = document.getElementById("filterTahunTabungan").value;
+  const bulanFilter = document.getElementById("filterBulanTabungan").value;
 
-  const data = window.tabunganCache.find(d => String(d.id) === String(id));
-  if(!data) return;
+  const namaBulan = [
+    "",
+    "Januari","Februari","Maret","April","Mei","Juni",
+    "Juli","Agustus","September","Oktober","November","Desember"
+  ];
 
-  const form = document.getElementById("tabunganForm");
+  // FILTER (sama seperti tampilan)
+  if (keyword) {
+    data = data.filter(d =>
+      (namaBulan[Number(d.bulan)] || "").toLowerCase().includes(keyword) ||
+      String(d.tahun).includes(keyword)
+    );
+  }
 
-  form.bulan.value = data.bulan;
-  form.tahun.value = data.tahun;
-  form.keterangan.value = data.keterangan || "";
+  if (tahun) {
+    data = data.filter(d => String(d.tahun) === tahun);
+  }
 
-  document.getElementById("total_tabungan").value =
-    Number(data.total).toLocaleString("id-ID");
+  if (bulanFilter) {
+    data = data.filter(d => String(d.bulan) === bulanFilter);
+  }
 
-  document.getElementById("total_tabungan_hidden").value = data.total;
+  // SORT
+  data.sort((a, b) => b.tahun - a.tahun || b.bulan - a.bulan);
 
-  form.dataset.editId = id;
-}
-</script>
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([]);
 
-<!-- script hapus tabungan -->
- <script>
-  function hapusTabungan(id){
+  let sheetData = [];
 
-  if(!confirm("Yakin hapus data ini?")) return;
+  sheetData.push(["LAPORAN TABUNGAN"]);
+  sheetData.push([]);
 
-  const formData = new FormData();
-  formData.append("token", "RAHASIA123");
-  formData.append("action", "delete_tabungan");
-  formData.append("id", id);
+  sheetData.push([
+    "Bulan",
+    "Tahun",
+    "Total",
+    "Keterangan"
+  ]);
 
-  fetch(SCRIPT_URL, {
-    method: "POST",
-    body: formData
-  })
-  .then(res => res.json())
-  .then(res => {
-    if(res.result === "success"){
-      alert("Berhasil dihapus");
-      loadTabungan();
-    }
+  let startRow = sheetData.length + 1;
+
+  data.forEach(row => {
+    sheetData.push([
+      namaBulan[Number(row.bulan)],
+      row.tahun,
+      Number(row.total) || 0,
+      row.keterangan || "-"
+    ]);
   });
+
+  let lastRow = sheetData.length;
+
+  // TOTAL
+  sheetData.push([
+    "",
+    "TOTAL",
+    { f: `SUM(C${startRow}:C${lastRow})` },
+    ""
+  ]);
+
+  XLSX.utils.sheet_add_aoa(ws, sheetData, { origin: "A1" });
+
+  // FORMAT RUPIAH
+  for (let i = startRow - 1; i <= lastRow; i++) {
+    let cell = XLSX.utils.encode_cell({ r: i, c: 2 }); // kolom C
+    if (ws[cell]) {
+      ws[cell].t = 'n';
+      ws[cell].z = '"Rp"#,##0';
+    }
+  }
+
+  ws["!cols"] = [
+    { wch: 15 }, // Bulan
+    { wch: 10 }, // Tahun
+    { wch: 18 }, // Total
+    { wch: 30 }  // Keterangan
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, "Tabungan");
+
+  XLSX.writeFile(wb, "Laporan_Tabungan.xlsx");
 }
- </script>
- <!-- tahun tabungan -->
-  <script>
-    // set tahun otomatis tabungan
-document.getElementById("tahun_tabungan").value = new Date().getFullYear();
-  </script>
+</script>
           <!-- script logout -->
     <script>
       function logout(auto = false){
